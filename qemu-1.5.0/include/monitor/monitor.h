@@ -7,6 +7,8 @@
 #include "block/block.h"
 #include "monitor/readline.h"
 
+#include "qom/cpu.h"
+
 extern Monitor *cur_mon;
 extern Monitor *default_mon;
 
@@ -99,5 +101,9 @@ int monitor_fdset_get_fd(int64_t fdset_id, int flags);
 int monitor_fdset_dup_fd_add(int64_t fdset_id, int dup_fd);
 int monitor_fdset_dup_fd_remove(int dup_fd);
 int monitor_fdset_dup_fd_find(int dup_fd);
+
+void XTIER_start_getting_user_input(ReadLineFunc *callback);
+void XTIER_stop_getting_user_input(void);
+void XTIER_synchronize_state(CPUState *state);
 
 #endif /* !MONITOR_H */

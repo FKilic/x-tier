@@ -95,6 +95,9 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/kvm.h>
 
+#include "X-TIER/X-TIER_kvm.h"
+#include "X-TIER/X-TIER_inject.h"
+
 MODULE_INFO(version, "kvm-devel");
 MODULE_AUTHOR("Qumranet");
 MODULE_LICENSE("GPL");
@@ -1793,6 +1796,9 @@ static long kvm_vcpu_ioctl(struct file *filp,
 	struct kvm_fpu *fpu = NULL;
 	struct kvm_sregs *kvm_sregs = NULL;
 
+	struct XTIER_state *XTIER_state_var = NULL;
+	char *XTIER_inject_data = NULL;
+
 	if (vcpu->kvm->mm != current->mm)
 		return -EIO;
 
@@ -1976,6 +1982,129 @@ out_free2:
 		r = 0;
 		break;
 	}
+	case XTIER_IOCTL_SET_GLOBAL_XTIER_STATE: {
+		XTIER_state_var = kzalloc(sizeof(struct XTIER_state), GFP_KERNEL);
+
+		r = -ENOMEM;
+		if (!XTIER_state_var)
+			goto out;
+
+		if(copy_from_user(XTIER_state_var, argp, sizeof(struct XTIER_state)))
+			goto out;
+
+		XTIER_set_global_state(vcpu, XTIER_state_var);
+		r = 0;
+
+		break;
+	}
+	case XTIER_IOCTL_INJECT: {
+		// Free
+
+		// We currently do _NOT_ reserve memory within kernel space
+		// for the module code!
+		/*
+		if(_XTIER_inject_current_injection.code)
+		{
+			vfree(_XTIER_inject_current_injection.code);
+			_XTIER_inject_current_injection.code = 0;
+		}
+		*/
+
+		if(_XTIER_inject_current_injection.args)
+		{
+			vfree(_XTIER_inject_current_injection.args);
+			_XTIER_inject_current_injection.args = 0;
+		}
+
+		if(!argp)
+		{
+			XTIER_inject(vcpu, 0);
+			r = 0;
+			break;
+		}
+
+		if(copy_from_user(&_XTIER_inject_current_injection, argp, sizeof(struct injection)))
+			goto out;
+
+		// Get the code
+		// Temporarily save user code pointer
+		// We can avoid this step, since the userspace data will be
+		// available within kernel module (qemu invokes the ioctl call,
+		// which leads to the execution of the vm)
+		/*
+		XTIER_inject_data = _XTIER_inject_current_injection.code;
+		// Use VMALLOC to be able to reserve large amounts of memory
+		_XTIER_inject_current_injection.code = vmalloc(_XTIER_inject_current_injection.code_len);
+
+		r = -ENOMEM;
+		if (!_XTIER_inject_current_injection.code)
+			goto out;
+
+		if(copy_from_user(_XTIER_inject_current_injection.code,
+						  XTIER_inject_data,
+						  _XTIER_inject_current_injection.code_len))
+			goto out;
+		*/
+		// Get the arguments
+		// Temporarily save user code pointer
+		XTIER_inject_data = (char *)_XTIER_inject_current_injection.args;
+
+		if (XTIER_inject_data)
+		{
+			// Use VMALLOC to be able to reserve large amounts of memory
+			_XTIER_inject_current_injection.args = vmalloc(_XTIER_inject_current_injection.args_size);
+
+			r = -ENOMEM;
+			if (!_XTIER_inject_current_injection.args)
+				goto out;
+
+			if(copy_from_user(_XTIER_inject_current_injection.args,
+							  XTIER_inject_data,
+							  _XTIER_inject_current_injection.args_size))
+				goto out;
+		}
+
+		// The injection structure now has consolidated arguments
+		_XTIER_inject_current_injection.type = CONSOLIDATED_ARGS;
+
+		// This is a new module
+		_XTIER_inject.new_module = 1;
+
+		XTIER_inject(vcpu, &_XTIER_inject_current_injection);
+		r = 0;
+
+		break;
+	}
+	case XTIER_IOCTL_INJECT_RESERVE_MEMORY: {
+		u64 size = (u64)argp;
+
+		r = XTIER_inject_reserve_additional_memory(vcpu, (u32)(size & 0xffffffff));
+
+		break;
+	}
+	case XTIER_IOCTL_INJECT_SET_AUTO_INJECT: {
+		u32 auto_inject = (u32)(((u64)argp) & 0xffffffff);
+
+		XTIER_set_auto_inject(vcpu, auto_inject);
+		r = 0;
+
+		break;
+	}
+	case XTIER_IOCTL_INJECT_SET_TIME_INJECT: {
+		u32 time_inject = (u32)(((u64)argp) & 0xffffffff);
+
+		XTIER_set_time_inject(vcpu, time_inject);
+		r = 0;
+
+		break;
+	}
+	case XTIER_IOCTL_INJECT_GET_PERFORMANCE: {
+		r = -EFAULT;
+		if (copy_to_user(argp, &_XTIER_performance, sizeof(struct XTIER_performance)))
+			goto out;
+		r = 0;
+		break;
+	}
 	default:
 		r = kvm_arch_vcpu_ioctl(filp, ioctl, arg);
 	}
@@ -1983,6 +2112,7 @@ out:
 	vcpu_put(vcpu);
 	kfree(fpu);
 	kfree(kvm_sregs);
+	kfree(XTIER_state_var);
 	return r;
 }
 

@@ -96,6 +96,8 @@
 #include <asm/pvclock.h>
 #include <asm/div64.h>
 
+#include "X-TIER/X-TIER_kvm.h"
+
 #define MAX_IO_MSRS 256
 #define KVM_MAX_MCE_BANKS 32
 #define KVM_MCE_CAP_SUPPORTED (MCG_CTL_P | MCG_SER_P)
@@ -5282,6 +5284,9 @@ static int vcpu_enter_guest(struct kvm_vcpu *vcpu)
 	bool req_int_win = !irqchip_in_kernel(vcpu->kvm) &&
 		vcpu->run->request_interrupt_window;
 	bool req_immediate_exit = 0;
+
+	// Pre run
+	XTIER_pre_vmx_run(vcpu);
 
 	if (vcpu->requests) {
 		if (kvm_check_request(KVM_REQ_MMU_RELOAD, vcpu))

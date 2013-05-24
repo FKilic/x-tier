@@ -69,6 +69,8 @@
 #include "hmp.h"
 #include "qemu/thread.h"
 
+#include "X-TIER/X-TIER_qemu.h"
+
 /* for pic/irq_info */
 #if defined(TARGET_SPARC)
 #include "hw/sparc/sun4m.h"
@@ -2446,6 +2448,33 @@ int monitor_handle_fd_param(Monitor *mon, const char *fdname)
     }
 
     return fd;
+}
+
+/*
+ * X-TIER related functions
+ */
+
+static void XTIER_shell(Monitor *mon, const QDict *qdict)
+{
+	XTIER_switch_to_XTIER_mode((CPUState *)mon_get_cpu());
+}
+
+
+void XTIER_start_getting_user_input(ReadLineFunc *callback)
+{
+	// Read data
+	readline_start(default_mon->rs, XTIER_PROMPT, 0, callback, NULL);
+}
+
+void XTIER_stop_getting_user_input(void)
+{
+	// Return control to monitor
+	monitor_read_command(default_mon, 1);
+}
+
+void XTIER_synchronize_state(CPUState *state)
+{
+ 	cpu_synchronize_state((CPUX86State *)state);
 }
 
 /* Please update hmp-commands.hx when adding or changing commands */

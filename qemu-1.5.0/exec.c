@@ -2625,6 +2625,41 @@ bool virtio_is_big_endian(void)
 
 #endif
 
+/*
+ * Translate the given guest virtual address in a host virtual address.
+ */
+hwaddr gva_to_hva(CPUState *state, hwaddr addr)
+{
+	hwaddr page = 0;
+	hwaddr phys_addr = 0;
+	MemoryRegionSection *section;
+
+	// Get physical address
+	page = addr & TARGET_PAGE_MASK;
+	phys_addr = cpu_get_phys_page_debug(state, page);
+
+	// Mapping found?
+	if (phys_addr == -1)
+		return -1;
+
+	phys_addr += (addr & ~TARGET_PAGE_MASK);
+
+	// Get Host Virtual address
+	page = phys_addr & TARGET_PAGE_MASK;
+
+	// Get section
+	section = phys_page_find(address_space_memory.dispatch, page >> TARGET_PAGE_BITS);
+
+	if (!memory_region_is_ram(section->mr))
+	{
+		return -1;
+	}
+
+	// Convert address
+	return ((unsigned long long)qemu_get_ram_ptr(section->mr->ram_addr)) +
+			memory_region_section_addr(section, phys_addr);
+}
+
 #ifndef CONFIG_USER_ONLY
 bool cpu_physical_memory_is_io(hwaddr phys_addr)
 {

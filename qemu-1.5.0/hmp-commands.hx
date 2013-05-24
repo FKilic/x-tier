@@ -1647,6 +1647,19 @@ STEXI
 show available trace events and their state
 ETEXI
 
+    {
+        .name       = "x-tier",
+        .args_type  = "",
+        .params     = "",
+        .help       = "Switch to 'injection' mode.",
+        .mhandler.cmd = XTIER_shell,
+    },
+
+STEXI
+@item inject
+Switch to 'injection' mode.
+ETEXI
+
 STEXI
 @end table
 ETEXI
