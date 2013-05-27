@@ -6,8 +6,8 @@ source $(dirname $0)/functions.sh
 # ARGUMENTS
 INJECTION_PATH="X-TIER"
 KVM_PATH="kvm"
-OS=$3
-DEST=$4
+OS=$1
+DEST=$2
 
 # Turn Output off
 set +v
@@ -32,13 +32,13 @@ finishStep
 
 # Copy Modules to TMP
 echo ""
-printStep " Copying KVM Modules to $4"
+printStep " Copying KVM Modules to $DEST"
 printSubStep "1" "2" "Copying KVM"
-executeCommand "cp $KVM_PATH/x86/kvm.ko $4/kvm.ko"
+executeCommand "cp $KVM_PATH/x86/kvm.ko $DEST/kvm.ko"
 finishSubStep true
 
 printSubStep "2" "2" "Copying KVM-Intel"
-executeCommand "cp $KVM_PATH/x86/kvm-intel.ko $4/kvm-intel.ko"
+executeCommand "cp $KVM_PATH/x86/kvm-intel.ko $DEST/kvm-intel.ko"
 finishSubStep true
 finishStep
 
@@ -46,11 +46,11 @@ finishStep
 echo ""
 printStep " Changing owner of modules to $(whoami)"
 printSubStep "1" "2" "Changing owner of KVM"
-executeCommand "sudo chown $(whoami) $4/kvm.ko"
+executeCommand "sudo chown $(whoami) $DEST/kvm.ko"
 finishSubStep true
 
 printSubStep "2" "2" "Changing owner of KVM-Intel"
-executeCommand "sudo chown $(whoami) $4/kvm-intel.ko"
+executeCommand "sudo chown $(whoami) $DEST/kvm-intel.ko"
 finishSubStep true
 finishStep
 
@@ -58,11 +58,11 @@ finishStep
 echo ""
 printStep " Loading modules"
 printSubStep "1" "2" "Loading KVM"
-executeCommand "sudo insmod $4/kvm.ko"
+executeCommand "sudo insmod $DEST/kvm.ko"
 finishSubStep true
 
 printSubStep "2" "2" "Loading KVM-Intel"
-executeCommand "sudo insmod $4/kvm-intel.ko"
+executeCommand "sudo insmod $DEST/kvm-intel.ko"
 finishSubStep true
 finishStep
 
@@ -71,55 +71,55 @@ if [[ $OS == "linux" ]]
 then
         #linux
         printStep " Copying Injection Data"
-        printSubStep "1" "6" "Creating directory $4/linux"
-        executeCommand "mkdir -p $4/linux"
+        printSubStep "1" "6" "Creating directory $DEST/linux"
+        executeCommand "mkdir -p $DEST/linux"
         finishSubStep false
 
         printSubStep "2" "6" "Copying *.ko files"
-        executeCommand "find $INJECTION_PATH/kernelmodule/linux/ -name '*.ko' | while read line; do cp \$line $4/linux/; done"
+        executeCommand "find $INJECTION_PATH/kernelmodule/linux/ -name '*.ko' | while read line; do cp \$line $DEST/linux/; done"
         finishSubStep true
 
         printSubStep "3" "6" "Copying *.inject files"
-        executeCommand "find $INJECTION_PATH/kernelmodule/linux/ -name '*.inject' | while read line; do cp \$line $4/linux/; done"
+        executeCommand "find $INJECTION_PATH/kernelmodule/linux/ -name '*.inject' | while read line; do cp \$line $DEST/linux/; done"
         finishSubStep true
 
         printSubStep "4" "6" "Copying parser"
-        executeCommand "cp $INJECTION_PATH/parser/linux/Debug/inject-parser $4/linux/"
+        executeCommand "cp $INJECTION_PATH/parser/linux/X-TIER_linux_parser $DEST/linux/"
         finishSubStep true
         
         printSubStep "5" "6" "Copying wrapper"
-        executeCommand "rm -rf $4/wrapper && cp -r $INJECTION_PATH/wrapper $4/"
+        executeCommand "rm -rf $DEST/wrapper && cp -r $INJECTION_PATH/wrapper $DEST/"
         finishSubStep true
         
         printSubStep "6" "6" "Copying scripts"
-        executeCommand "rm -rf $4/scripts && cp -r $INJECTION_PATH/scripts $4/"
+        executeCommand "rm -rf $DEST/scripts && cp -r $INJECTION_PATH/scripts $DEST/"
         finishSubStep true
         finishStep
 else
         #win
         printStep " Copying Injection Data"
-        printSubStep "1" "6" "Creating directory $4/win"
-        executeCommand "mkdir -p $4/win"
+        printSubStep "1" "6" "Creating directory $DEST/win"
+        executeCommand "mkdir -p $DEST/win"
         finishSubStep false
 
         printSubStep "2" "6" "Copying *.sys files"
-        executeCommand "find $INJECTION_PATH/kernelmodule/win/ -name '*.sys' | while read line; do cp \$line $4/win/; done"
+        executeCommand "find $INJECTION_PATH/kernelmodule/win/ -name '*.sys' | while read line; do cp \$line $DEST/win/; done"
         finishSubStep true
 
         printSubStep "3" "6" "Copying *.inject files"
-        executeCommand "find $INJECTION_PATH/kernelmodule/win/ -name '*.inject' | while read line; do cp \$line $4/win/; done"
+        executeCommand "find $INJECTION_PATH/kernelmodule/win/ -name '*.inject' | while read line; do cp \$line $DEST/win/; done"
         finishSubStep true
 
         printSubStep "4" "6" "Copying parser"
-        executeCommand "cp $INJECTION_PATH/parser/win/* $4/win/"
+        executeCommand "cp $INJECTION_PATH/parser/win/* $DEST/win/"
         finishSubStep true
         
         printSubStep "5" "6" "Copying wrapper"
-        executeCommand "rm -rf $4/wrapper && cp -r $INJECTION_PATH/wrapper $4/"
+        executeCommand "rm -rf $DEST/wrapper && cp -r $INJECTION_PATH/wrapper $DEST/"
         finishSubStep true
         
         printSubStep "6" "6" "Copying scripts"
-        executeCommand "rm -rf $4/scripts && cp -r $INJECTION_PATH/scripts $4/"
+        executeCommand "rm -rf $DEST/scripts && cp -r $INJECTION_PATH/scripts $DEST/"
         finishSubStep true
         finishStep
 fi

@@ -23,8 +23,8 @@
 DESTINATION_FOLDER="/tmp/"
 
 # Define your VMs here
-LINUX_CMD="./qemu-system-x86_64 -L /usr/share/qemu -hda /local/vms/ubuntu-11-64-server -k de -monitor telnet:127.0.0.1:3333,server -serial pty -net nic,vlan=0 -net user,vlan=0,hostfwd=tcp::12345-:22 -m 1024 -enable-kvm"
-WINDOWS_CMD="./qemu-system-x86_64 -L /usr/share/qemu -hda /local/vms/windows-7-32-bit -k de -monitor telnet:127.0.0.1:3333,server -usbdevice tablet -m 1024"
+LINUX_CMD="-hda /local/vms/ubuntu-11-64-server -k de -monitor telnet:127.0.0.1:3333,server -serial pty -net nic,vlan=0 -net user,vlan=0,hostfwd=tcp::12345-:22 -m 1024 -enable-kvm"
+WINDOWS_CMD="-hda /local/vms/windows-7-32-bit -k de -monitor telnet:127.0.0.1:3333,server -usbdevice tablet -m 1024"
 
 #====================================================
 #       Commands
@@ -46,7 +46,6 @@ then
                 then
                         echo "Invalid Choice."
                         echo ""
-                        echo "Which VM would you like to start?"
                         echo "Which VM would you like to start?"
                         echo "  -> Linux: 1"
                         echo "  -> Windows: 2"
@@ -80,7 +79,7 @@ case $CHOICE in
             exit -1
         fi
         
-        cd qemu/x86_64-softmmu/ && ./$LINUX_CMD;;
+        cd qemu/x86_64-softmmu/ && ./qemu-system-x86_64 $LINUX_CMD;;
 
         "2")
         chmod +x X-TIER/bin/load.sh && X-TIER/bin/load.sh win $DESTINATION_FOLDER
@@ -91,7 +90,7 @@ case $CHOICE in
             exit -1
         fi
         
-        cd qemu/x86_64-softmmu/ && ./$WINDOWS_CMD;;
+        cd qemu/x86_64-softmmu/ && ./qemu-system-x86_64 $WINDOWS_CMD;;
 
         *) echo "Unknown choice!";;
 esac
