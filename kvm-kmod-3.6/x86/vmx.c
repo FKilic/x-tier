@@ -79,6 +79,9 @@
 
 #include "trace.h"
 
+// X-TIER
+#include "X-TIER/X-TIER_kvm.h"
+
 #define __ex(x) __kvm_handle_fault_on_reboot(x)
 #define __ex_clear(x, reg) \
 	____kvm_handle_fault_on_reboot(x, "xor " reg " , " reg)
@@ -1639,7 +1642,13 @@ static void vmx_fpu_activate(struct kvm_vcpu *vcpu)
 	cr0 &= ~(X86_CR0_TS | X86_CR0_MP);
 	cr0 |= kvm_read_cr0_bits(vcpu, X86_CR0_TS | X86_CR0_MP);
 	vmcs_writel(GUEST_CR0, cr0);
-	update_exception_bitmap(vcpu);
+
+	// Only update if exception exiting is not enabled!
+	if(!(_XTIER.mode & XTIER_EXCEPTION_EXIT))
+		update_exception_bitmap(vcpu);
+	else
+		XTIER_fpu_changed(vcpu);
+
 	vcpu->arch.cr0_guest_owned_bits = X86_CR0_TS;
 	if (is_guest_mode(vcpu))
 		vcpu->arch.cr0_guest_owned_bits &=
@@ -1672,7 +1681,13 @@ static void vmx_fpu_deactivate(struct kvm_vcpu *vcpu)
 	 */
 	vmx_decache_cr0_guest_bits(vcpu);
 	vmcs_set_bits(GUEST_CR0, X86_CR0_TS | X86_CR0_MP);
-	update_exception_bitmap(vcpu);
+
+	// Only update if exception exiting is not enabled!
+	if(!(_XTIER.mode & XTIER_EXCEPTION_EXIT))
+		update_exception_bitmap(vcpu);
+	else
+		XTIER_fpu_changed(vcpu);
+
 	vcpu->arch.cr0_guest_owned_bits = 0;
 	vmcs_writel(CR0_GUEST_HOST_MASK, ~vcpu->arch.cr0_guest_owned_bits);
 	if (is_guest_mode(vcpu)) {
@@ -4196,7 +4211,14 @@ static void vmx_inject_irq(struct kvm_vcpu *vcpu)
 			     vmx->vcpu.arch.event_exit_inst_len);
 	} else
 		intr |= INTR_TYPE_EXT_INTR;
-	vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, intr);
+
+	// Enqueue interrupts in case of exception exiting
+	if((_XTIER.mode & XTIER_EXCEPTION_EXIT) != XTIER_EXCEPTION_EXIT)
+		vmcs_write32(VM_ENTRY_INTR_INFO_FIELD, intr);
+	else
+	{
+		XTIER_enqueue_intr(intr);
+	}
 }
 
 static void vmx_inject_nmi(struct kvm_vcpu *vcpu)
@@ -4384,7 +4406,7 @@ static int handle_exception(struct kvm_vcpu *vcpu)
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct kvm_run *kvm_run = vcpu->run;
 	u32 intr_info, ex_no, error_code;
-	unsigned long cr2, rip, dr6;
+	unsigned long cr2, rip, dr6 = 0;
 	u32 vect_info;
 	enum emulation_result er;
 
@@ -4468,6 +4490,13 @@ static int handle_exception(struct kvm_vcpu *vcpu)
 		rip = kvm_rip_read(vcpu);
 		kvm_run->debug.arch.pc = vmcs_readl(GUEST_CS_BASE) + rip;
 		kvm_run->debug.arch.exception = ex_no;
+
+		if((_XTIER.mode & XTIER_CODE_INJECTION) == XTIER_CODE_INJECTION &&
+				(dr6 & (1UL << XTIER_INJECT_HOOK_DR)))
+		{
+			return XTIER_reinject(vcpu);
+		}
+
 		break;
 	default:
 		kvm_run->exit_reason = KVM_EXIT_EXCEPTION;
@@ -4782,8 +4811,24 @@ static int handle_interrupt_window(struct kvm_vcpu *vcpu)
 
 static int handle_halt(struct kvm_vcpu *vcpu)
 {
-	skip_emulated_instruction(vcpu);
-	return kvm_emulate_halt(vcpu);
+	int ret = 0;
+	int halt_exiting = 0;
+
+	// Get Halt exiting before the call since it may be disabled
+	if(_XTIER.mode & XTIER_HLT_EXIT)
+		halt_exiting = 1;
+
+	// Let the tracing component handle this one.
+	if(_XTIER.mode & XTIER_HLT_EXIT)
+		ret = XTIER_handle_hlt(vcpu);
+
+	if(ret < 0 || !halt_exiting)
+	{
+		skip_emulated_instruction(vcpu);
+		return kvm_emulate_halt(vcpu);
+	}
+
+	return ret;
 }
 
 static int handle_vmcall(struct kvm_vcpu *vcpu)
@@ -4932,7 +4977,25 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu)
 	u32 error_code;
 	int gla_validity;
 
+	u64 rip;
+	int ret = 0;
+
 	exit_qualification = vmcs_readl(EXIT_QUALIFICATION);
+	gpa = vmcs_read64(GUEST_PHYSICAL_ADDRESS);
+
+	// Try to handle this EPT violation
+	if((ret = XTIER_handle_ept_violation(vcpu, gpa)))
+	{
+		// Update RIP
+		if(ret == 1)
+		{
+			rip = kvm_rip_read(vcpu);
+			rip += vmcs_read32(VM_EXIT_INSTRUCTION_LEN);
+			kvm_rip_write(vcpu, rip);
+		}
+
+		return 1;
+	}
 
 	if (exit_qualification & (1 << 6)) {
 		printk(KERN_ERR "EPT: GPA exceeds GAW!\n");
@@ -4952,7 +5015,6 @@ static int handle_ept_violation(struct kvm_vcpu *vcpu)
 		return 0;
 	}
 
-	gpa = vmcs_read64(GUEST_PHYSICAL_ADDRESS);
 	trace_kvm_page_fault(gpa, exit_qualification);
 
 	/* It is a write fault? */
@@ -6049,6 +6111,8 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 	u32 exit_reason = vmx->exit_reason;
 	u32 vectoring_info = vmx->idt_vectoring_info;
 
+	int ret = 0;
+
 	/* If guest state is invalid, start emulating */
 	if (vmx->emulation_required && emulate_invalid_guest_state)
 		return handle_invalid_guest_state(vcpu);
@@ -6112,6 +6176,17 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 			       __func__, vcpu->vcpu_id);
 			vmx->soft_vnmi_blocked = 0;
 		}
+	}
+
+	// Check for a vm exit due to exception exiting
+	if(exit_reason == EXIT_REASON_EXCEPTION_NMI &&
+		_XTIER.mode & XTIER_EXCEPTION_EXIT)
+	{
+		ret = XTIER_handle_exception(vcpu, vmx->exit_intr_info);
+
+		// Let vmx handle the exception in case ret is smaller than 0
+		if(ret >= 0)
+			return ret;
 	}
 
 	if (exit_reason < kvm_vmx_max_exit_handlers
@@ -6307,6 +6382,9 @@ static void atomic_switch_perf_msrs(struct vcpu_vmx *vmx)
 static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
+
+	// Call the on entry function
+	XTIER_vmx_on_entry(vcpu);
 
 	if (is_guest_mode(vcpu) && !vmx->nested.nested_run_pending) {
 		struct vmcs12 *vmcs12 = get_vmcs12(vcpu);
