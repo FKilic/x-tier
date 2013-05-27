@@ -22,7 +22,8 @@
 
 #define msg_print(level, level_string, fmt, ...) \
         do { if (DEBUG_LEVEL >= level) printk("[ X-TIER - %s ] %d : %s(): " fmt, \
-                                			level_string, __LINE__, __func__, ##__VA_ARGS__); } while (0)
+                                              level_string, __LINE__, __func__, ##__VA_ARGS__); \
+           } while (0)
 
 #define PRINT_DEBUG_FULL(fmt, ...) msg_print(DEBUG_FULL, "DEBUG", fmt, ##__VA_ARGS__)
 #define PRINT_DEBUG(fmt, ...) msg_print(DEBUG, "DEBUG", fmt, ##__VA_ARGS__)
