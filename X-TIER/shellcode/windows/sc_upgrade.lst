@@ -1,0 +1,293 @@
+     1                                  ;nasm -f elf32 -l sc_upgrade.lst sc_upgrade.asm
+     2                                  BITS 32 
+     3                                          SECTION .text
+     4                                          global main
+     5                                  main:
+     6 00000000 E969010000                      jmp start
+     7                                  
+     8                                  
+     9                                  patcher:
+    10 00000005 52                         push edx
+    11 00000006 57                         push edi
+    12 00000007 53                         push ebx
+    13 00000008 51                         push ecx
+    14                                  
+    15 00000009 8B5504                     mov edx, [ebp+4]      ; counter
+    16 0000000C 89EF                       mov edi, ebp
+    17                                  
+    18                                  patchloop:
+    19 0000000E 83C708                     add edi, 8
+    20 00000011 85D2                       test edx, edx        ; if count == 0
+    21 00000013 740E                       jz endpatcher
+    22 00000015 4A                         dec edx
+    23                                  
+    24 00000016 89E8                       mov eax, ebp   	; baseaddr
+    25 00000018 0307                       add eax, [edi]       ; addr where to write
+    26 0000001A 89EB                       mov ebx, ebp         ; baseaddr
+    27 0000001C 035F04                     add ebx, [edi+4]     ; addr what to write
+    28 0000001F 8918                       mov [eax], ebx
+    29 00000021 EBEB                       jmp patchloop
+    30                                  
+    31                                  endpatcher:
+    32 00000023 89F8                       mov eax, edi
+    33                                  
+    34 00000025 59                         pop ecx
+    35 00000026 5B                         pop ebx
+    36 00000027 5F                         pop edi
+    37 00000028 5A                         pop edx
+    38 00000029 C3                         ret
+    39                                  
+    40                                  esppatcher:
+    41 0000002A 58                         pop eax		; ret addr
+    42 0000002B 5A                         pop edx		; distance to our data
+    43 0000002C 59                         pop ecx		; ESP value
+    44 0000002D 50                         push eax		; ret addr
+    45 0000002E 55                         push ebp		; save EBP
+    46 0000002F 01D5                       add ebp, edx		; pointing after patch stack
+    47                                  
+    48 00000031 8B7500                     mov esi, [ebp]	; counter
+    49 00000034 89EF                       mov edi, ebp
+    50                                  
+    51                                  esppatchloop:
+    52 00000036 83C704                     add edi, 4
+    53 00000039 85F6                       test esi, esi	; if count == 0
+    54 0000003B 740B                       jz espendpatcher
+    55 0000003D 4E                         dec esi
+    56                                  
+    57 0000003E 89E8                       mov eax, ebp		; segment addr
+    58 00000040 29D0                       sub eax, edx		; baseaddr = segmentaddr - distance
+    59 00000042 0307                       add eax, [edi]	; addr where to write
+    60 00000044 8908                       mov [eax], ecx	; write ESP
+    61 00000046 EBEE                       jmp esppatchloop
+    62                                  
+    63                                  espendpatcher:
+    64 00000048 89F8                       mov eax, edi 	; return pointer to next segment
+    65 0000004A 5D                         pop ebp		; restore original ebp
+    66 0000004B C3                         ret
+    67                                  
+    68                                  
+    69                                  
+    70                                  saveregisters:
+    71 0000004C 83C404                     add esp, 0x4		; ret value
+    72 0000004F 83C408                     add esp, 0x8		; basep and espval on stack
+    73 00000052 83C41C                     add esp, 0x1c	; all registers 7*4
+    74 00000055 50                         push eax
+    75 00000056 53                         push ebx
+    76 00000057 51                         push ecx
+    77 00000058 52                         push edx
+    78 00000059 57                         push edi
+    79 0000005A 56                         push esi
+    80 0000005B 55                         push ebp
+    81 0000005C 83EC08                     sub esp, 0x8		; 2 values
+    82 0000005F 83EC04                     sub esp, 0x4		; ret value
+    83 00000062 C3                         ret
+    84                                  
+    85                                  restoreregisters:
+    86 00000063 83C404                     add esp, 0x4		; ret value
+    87 00000066 83C404                     add esp, 0x4		; 1 value on stack
+    88 00000069 5D                         pop ebp
+    89 0000006A 5E                         pop esi
+    90 0000006B 5F                         pop edi
+    91 0000006C 5A                         pop edx
+    92 0000006D 59                         pop ecx
+    93 0000006E 5B                         pop ebx
+    94 0000006F 58                         pop eax
+    95 00000070 83EC1C                     sub esp, 0x1c	; 7*8 registers
+    96 00000073 83EC04                     sub esp, 0x4		; 1 value on stack
+    97 00000076 83EC04                     sub esp, 0x4		; ret value
+    98 00000079 C3                         ret
+    99                                  
+   100                                  iskpcr:
+   101 0000007A 58                         pop eax		; ret
+   102 0000007B 59                         pop ecx		; kprc test addr
+   103 0000007C 50                         push eax		; ret addr
+   104 0000007D 52                         push edx		; save register
+   105 0000007E 53                         push ebx 		; save 
+   106                                  
+   107 0000007F 89CB                       mov ebx, ecx
+   108 00000081 83C11C                     add ecx, 0x1c
+   109 00000084 8B11                       mov edx, [ecx]
+   110 00000086 39D3                       cmp ebx, edx
+   111 00000088 7407                       jz kpcrfound
+   112                                   
+   113 0000008A B801000000                 mov eax, 0x1
+   114 0000008F EB05                       jmp endiskpcr
+   115                                  
+   116                                  kpcrfound:
+   117 00000091 B800000000                 mov eax, 0x0
+   118                                  
+   119                                  endiskpcr:
+   120 00000096 5B                         pop ebx
+   121 00000097 5A                         pop edx
+   122 00000098 C3                         ret
+   123                                     
+   124                                  
+   125                                  bruteKPCR:
+   126 00000099 58                         pop eax		; ret
+   127 0000009A 5F                         pop edi		; KPCR lower bytes
+   128 0000009B 50                         push eax		; ret
+   129 0000009C 51                         push ecx
+   130 0000009D 52                         push edx
+   131 0000009E 53                         push ebx
+   132                                   
+   133 0000009F BB00000000                 mov ebx, 0x0
+   134 000000A4 BA00000000                 mov edx, 0x0		; counter until 0x8f
+   135 000000A9 EB14                       jmp bruteKPCRloop
+   136                                  
+   137                                  bruteKPCRcmp:
+   138 000000AB 89D0                       mov eax, edx
+   139 000000AD C1E00C                     shl eax, 0xc
+   140 000000B0 01F8                       add eax, edi		; add kpcr lower bytes
+   141 000000B2 89C3                       mov ebx, eax
+   142 000000B4 53                         push ebx
+   143 000000B5 E8C0FFFFFF                 call iskpcr
+   144 000000BA 85C0                       test eax, eax
+   145 000000BC 7410                       jz bruteKPCRfound
+   146 000000BE 42                         inc edx
+   147                                  
+   148                                  bruteKPCRloop:
+   149 000000BF 81FA8F000000               cmp edx, 0x8f	
+   150 000000C5 7EE4                       jng bruteKPCRcmp
+   151                                  
+   152 000000C7 B800000000                 mov eax, 0x0		; not found
+   153 000000CC EB02                       jmp endbruteKPCR
+   154                                  
+   155                                  bruteKPCRfound:
+   156 000000CE 89D8                       mov eax, ebx
+   157                                  
+   158                                  endbruteKPCR:
+   159 000000D0 5B                         pop ebx
+   160 000000D1 5A                         pop edx
+   161 000000D2 59                         pop ecx
+   162 000000D3 C3                         ret
+   163                                  
+   164                                     
+   165                                  errorEXITtoVM:
+   166 000000D4 B8EFBEADDE                 mov eax, 0xdeadbeef
+   167 000000D9 CD50                       int 0x50
+   168                                  
+   169                                  getKernelBase:
+   170 000000DB 58                         pop eax		; ret
+   171 000000DC 5F                         pop edi		; KPCR 
+   172 000000DD 50                         push eax		; ret
+   173 000000DE 51                         push ecx
+   174 000000DF 83C734                     add edi, 0x34	; KDVersionBlock
+   175 000000E2 8B0F                       mov ecx, [edi]
+   176 000000E4 83C110                     add ecx, 0x10	; Kernelbase
+   177 000000E7 8B01                       mov eax, [ecx]
+   178 000000E9 59                         pop ecx
+   179 000000EA C3                         ret
+   180                                  
+   181                                  symbolpatcher:
+   182 000000EB 58                         pop eax		; ret
+   183 000000EC 5E                         pop esi		; distance
+   184 000000ED 50                         push eax		; ret
+   185                                   
+   186 000000EE 53                         push ebx
+   187 000000EF 51                         push ecx
+   188 000000F0 52                         push edx
+   189 000000F1 57                         push edi
+   190 000000F2 55                         push ebp
+   191                                  
+   192 000000F3 01F5                       add ebp, esi		; pointing to KPCR segment
+   193 000000F5 8B7D00                     mov edi, [ebp]	; KPCR lower addr
+   194 000000F8 57                         push edi
+   195 000000F9 E89BFFFFFF                 call bruteKPCR
+   196 000000FE 85C0                       test eax, eax
+   197 00000100 74D2                       jz errorEXITtoVM
+   198 00000102 89C7                       mov edi, eax		; else save KPCR Addr in EDI
+   199 00000104 57                         push edi
+   200 00000105 E8D1FFFFFF                 call getKernelBase
+   201 0000010A 89C1                       mov ecx, eax		; Save Kernelbase in ecx
+   202 0000010C 90                         nop			; reserved for debug
+   203 0000010D 8B5504                     mov edx, [ebp+0x4]	; symbol count
+   204 00000110 89EF                       mov edi, ebp		; segment base
+   205                                  
+   206                                  symbolpatcherloop:
+   207 00000112 83C708                     add edi, 0x8		; pointing to first data / or nextsegment if count == 0
+   208 00000115 85D2                       test edx, edx	; if count == 0
+   209 00000117 7412                       jz endsymbolpatcher
+   210                                  
+   211 00000119 4A                         dec edx		; count--
+   212                                  
+   213                                  
+   214 0000011A 89E8                       mov eax, ebp 	; segmentpointer
+   215 0000011C 29F0                       sub eax, esi		; distance to base
+   216 0000011E 0307                       add eax, [edi]	; offset where to write
+   217                                     
+   218 00000120 89CB                       mov ebx, ecx		; Kernelbase
+   219 00000122 035F04                     add ebx, [edi+4] 	; Offset based on kernelbase
+   220                                  
+   221 00000125 8918                       mov [eax], ebx	; Patch!
+   222 00000127 90                         nop
+   223 00000128 90                         nop 
+   224 00000129 EBE7                       jmp symbolpatcherloop 
+   225                                     
+   226                                  endsymbolpatcher:
+   227 0000012B 89F8                       mov eax, edi
+   228 0000012D 5D                         pop ebp
+   229 0000012E 5F                         pop edi
+   230 0000012F 5A                         pop edx
+   231 00000130 59                         pop ecx
+   232 00000131 5B                         pop ebx
+   233 00000132 C3                         ret
+   234                                  
+   235                                  
+   236                                  
+   237                                  sc:
+   238 00000133 E814FFFFFF                 call saveregisters	; Saving all registers
+   239 00000138 5D                         pop ebp           	; our base poiting to our data
+   240 00000139 5E                         pop esi		; original ESP value, which is pushed by the hypervisor
+   241 0000013A 8B4D00                     mov ecx, [ebp]     	; entrypoint
+   242 0000013D E8C3FEFFFF                 call patcher
+   243 00000142 89C3                       mov ebx, eax		; pointer to next data
+   244 00000144 29EB                       sub ebx, ebp		; distance to next data
+   245                                  
+   246 00000146 51                         push ecx		; save entrypoint
+   247                                  
+   248 00000147 56                         push esi		; original ESP value
+   249 00000148 53                         push ebx		; distance to data
+   250 00000149 E8DCFEFFFF                 call esppatcher
+   251 0000014E 89C3                       mov ebx, eax
+   252 00000150 29EB                       sub ebx, ebp
+   253                                  
+   254 00000152 59                         pop ecx		; restore entrypoint
+   255                                  
+   256 00000153 53                         push ebx
+   257 00000154 E892FFFFFF                 call symbolpatcher
+   258                                  
+   259                                  exit:
+   260 00000159 90                         nop
+   261 0000015A 89C8                       mov eax, ecx       	; entrypointoffset
+   262 0000015C 01E8                       add eax, ebp      	; add base offset
+   263 0000015E 50                         push eax		; add to call
+   264 0000015F E8FFFEFFFF                 call restoreregisters; Restore original register values
+   265 00000164 58                         pop eax
+   266 00000165 81C420030000               add esp, 800		; Constant offset to stackEND (=original stack)
+   267 0000016B FFD0                       call eax
+   268 0000016D F4                         hlt               	; VMI exit
+   269                                  
+   270                                  start:
+   271 0000016E E8C0FFFFFF                 call sc
+   272                                  stack:
+   273 00000173 31C0                       xor eax, eax      	; will be changed to string
+   274                                  
+   275                                  
+   276                                  ; Aufbau:
+   277                                  ; entrypoint
+   278                                  ; patch_count
+   279                                  ; patch_add_off
+   280                                  ; patch_val_off
+   281                                  ; ...
+   282                                  ; esppatch_count
+   283                                  ; esppatch_add_off
+   284                                  ; ...
+   285                                  ; KPCR_start_lowerbytes
+   286                                  ; count symbols
+   287                                  ; offset in module + base
+   288                                  ; offset in kernelbase
+   289                                  ; ...
+   290                                  
+   291                                  
+   292                                  
+   293                                  

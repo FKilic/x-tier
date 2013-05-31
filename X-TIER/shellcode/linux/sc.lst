@@ -1,0 +1,114 @@
+     1                                  ;nasm -f elf64 -l sc.lst sc.asm
+     2                                  BITS 64
+     3                                          SECTION .text
+     4                                          global main
+     5                                  main:
+     6 00000000 E9A1000000                      jmp start
+     7                                  
+     8                                  strcmp:
+     9 00000005 58                         pop rax              ; ret addr
+    10 00000006 59                         pop rcx              ; len(symbolname)
+    11 00000007 5F                         pop rdi              ; *symbolname
+    12 00000008 50                         push rax             ; ret addr
+    13                                  
+    14 00000009 488B7308                   mov rsi, [rbx+0x8]   ;
+    15 0000000D F3A6                       repe cmpsb           ; [rsi],[rdi] 
+    16 0000000F 48B800000000000000-        mov rax, 0
+    17 00000018 00                 
+    18 00000019 7503                       jne strcmpret
+    19 0000001B 488B03                     mov rax, [rbx]
+    20                                  
+    21                                  strcmpret:
+    22 0000001E C3                         ret
+    23                                  
+    24                                  
+    25                                  
+    26                                  patcher:
+    27 0000001F 4C8B4508                   mov r8, [rbp+8]      ; counter
+    28 00000023 4989E9                     mov r9, rbp
+    29                                  
+    30                                  patchloop:
+    31 00000026 4983C110                   add r9, 16
+    32 0000002A 4D85C0                     test r8, r8          ; if count == 0
+    33 0000002D 7415                       jz endpatcher
+    34 0000002F 49FFC8                     dec r8
+    35                                  
+    36 00000032 4889E8                     mov rax, rbp         ; baseaddr
+    37 00000035 490301                     add rax, [r9]        ; addr where to write
+    38 00000038 4889EB                     mov rbx, rbp         ; baseaddr
+    39 0000003B 49035908                   add rbx, [r9+8]      ; addr what to write
+    40 0000003F 488918                     mov [rax], rbx
+    41 00000042 EBE2                       jmp patchloop
+    42                                  
+    43                                  endpatcher:
+    44 00000044 C3                         ret
+    45                                  
+    46                                  
+    47                                  sc:
+    48 00000045 5D                         pop rbp           ; our base poiting to our data
+    49 00000046 4C8B5D00                   mov r11, [rbp]     ; entrypoint
+    50 0000004A E8D0FFFFFF                 call patcher
+    51 0000004F 4C89CD                     mov rbp, r9       ; pointing after the patch stack
+    52 00000052 488B5D00                   mov rbx, [rbp]    ; Begin ; End = [rbp+8]
+    53                                  
+    54                                  suchloop:
+    55 00000056 4C8B4510                   mov r8, [rbp+16]  ; counter symbols
+    56 0000005A 4C8D7D18                   lea r15, [rbp+24] ; *(len of first symbol)
+    57                                  
+    58                                  vergleichloop:
+    59 0000005E 4D85C0                     test r8, r8       ; if countsymbols == 0
+    60 00000061 742D                       jz endvergleich  
+    61 00000063 49FFC8                     dec r8
+    62 00000066 4D8B0F                     mov r9, [r15]     ; len of symbol
+    63 00000069 4983C708                   add r15, 8        ; next pointer
+    64 0000006D 4D8D17                     lea r10, [r15]    ; addr of symbolname
+    65 00000070 4D01CF                     add r15, r9
+    66 00000073 4152                       push r10
+    67 00000075 4151                       push r9
+    68 00000077 E889FFFFFF                 call strcmp
+    69 0000007C 4885C0                     test rax, rax
+    70 0000007F 7409                       jz nosymbolfound
+    71 00000081 4D8B0F                     mov r9, [r15]  ; addr to write
+    72 00000084 4901E9                     add r9, rbp
+    73 00000087 498901                     mov [r9], rax  ; writing addr of symbol to destination
+    74                                  nosymbolfound:
+    75 0000008A 4983C708                   add r15, 0x8
+    76 0000008E EBCE                       jmp vergleichloop  
+    77                                  
+    78                                  endvergleich:
+    79 00000090 4883C310                   add rbx, 0x10     ; next list_head
+    80 00000094 483B5D08                   cmp rbx, [rbp+8]  ; if begin == end
+    81 00000098 7402                       je exit
+    82 0000009A EBBA                       jmp suchloop
+    83                                  
+    84                                    
+    85                                  
+    86                                  exit:
+    87 0000009C 90                         nop
+    88 0000009D 4C89D8                     mov rax, r11       ; entrypointoffset
+    89 000000A0 4801E8                     add rax, rbp      ; add base offset
+    90 000000A3 FFD0                       call rax
+    91 000000A5 F4                         hlt               ; VMI exit
+    92                                  
+    93                                  start:
+    94 000000A6 E89AFFFFFF                      call sc
+    95                                  stack:
+    96 000000AB 31C0                            xor eax, eax      ; will be changed to string
+    97                                  
+    98                                  
+    99                                  ; Aufbau:
+   100                                  ; entrypoint
+   101                                  ; patch_count
+   102                                  ; patch_add_off
+   103                                  ; patch_val_off
+   104                                  ; ...
+   105                                  ; __start___ksymtab
+   106                                  ; __stop___ksymtab
+   107                                  ; count symbols
+   108                                  ; len(printk)
+   109                                  ; printk\0
+   110                                  ; addtowrite printk
+   111                                  ; ...
+   112                                  
+   113                                  
+   114                                  

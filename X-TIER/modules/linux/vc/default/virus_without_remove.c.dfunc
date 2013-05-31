@@ -1,0 +1,208 @@
+#include <linux/module.h>
+#include <linux/init.h>
+#include <linux/cryptohash.h>
+#include <linux/fs.h>
+#include <linux/fcntl.h>
+#include <linux/swab.h>
+#include <asm/uaccess.h>
+
+// Virus total module
+asmlinkage long (*orig_sys_open)(const char __user *filename, int flags, umode_t mode) = (void *)0xffffffff81164830;
+asmlinkage long (*orig_sys_read)(unsigned int fd, char __user *data, size_t count) = (void *)0xffffffff81165520;
+asmlinkage long (*orig_sys_close)(unsigned int fd) = (void *)0xffffffff81163830;
+asmlinkage long (*orig_sys_lseek)(unsigned int fd, off_t offset, unsigned int origin) = (void *)0xffffffff81164e00;
+
+int infected_file(u32 *digest)
+{
+	// We do this on the host.
+	// However instead of using a hypercall we in this case demonstrate communication
+	// using a simple printk statement.
+	return printk("SHA1: %x%x%x%x%x\n", digest[0], digest[1], digest[2], digest[3], digest[4]);	
+}
+
+void finish_last_block(u32 *digest, u8 *block, u32 *workspace, int block_len, u64 message_len)
+{
+	int i;
+	int current_pos = block_len + 1;
+	u64 *length = ((u64 *)block) + 7;
+	u64 length_bits = message_len * 8;
+
+	// Set next bit of block to 1 and the following bits to 0
+	block[block_len] = 0x80;
+
+	// Do we have to process two block or a single block?
+	if(block_len >= 56)
+	{
+		// Two blocks
+		for(i = current_pos; i >= 0 && i < 64; i++)
+		{
+			block[i] = 0;
+		}
+
+		// Transform
+		sha_transform(digest, block, workspace);
+
+		// Update position
+		current_pos = 0;
+	}
+
+	// Fill with 0's
+	for(i = current_pos; i >= 0 && i < 56; i++)
+		block[i] = 0;
+
+	// Add original length - Big endian
+	(*length) = length_bits;
+	__swab64s(length);
+
+	// Transform
+	sha_transform(digest, block, workspace);
+}
+
+mm_segment_t my_get_fs(void)
+{
+	unsigned long ks = 0;
+	struct thread_info *ti = 0; 
+
+	ks = (unsigned long)__get_cpu_var(kernel_stack);
+
+	ti = (void *)(ks + KERNEL_STACK_OFFSET - THREAD_SIZE);
+
+	return ti->addr_limit;
+}
+
+void my_set_fs(mm_segment_t seg)
+{
+	unsigned long ks = 0;
+        struct thread_info *ti = 0;
+
+        ks = (unsigned long)__get_cpu_var(kernel_stack);
+
+        ti = (void *)(ks + KERNEL_STACK_OFFSET - THREAD_SIZE);
+
+        ti->addr_limit = seg;
+}
+
+asmlinkage long my_open(const char __user *filename, int flags, umode_t mode)
+{
+	char *fname = 0;
+	long fd = 0; 
+
+	// SHA1 data
+	u8 data[64];
+	u32 digest[5];
+	u32 workspace[SHA_WORKSPACE_WORDS];
+	u64 length = 0;
+	int ret = 0;
+
+	// Disable userspace checks
+	mm_segment_t old_fs;
+
+        old_fs = my_get_fs();
+        my_set_fs(KERNEL_DS);
+	
+	// Get the filename	
+	fname = getname(filename);
+
+	if (!fname)
+	{
+		// Reenable userspace checks
+                my_set_fs(old_fs);
+
+		printk("[ VC - ERROR ] - Could not get the name of the file!\n");
+		return (-ENOENT);
+	}
+
+	// Open file
+	fd = orig_sys_open(filename, flags, mode);
+
+	if(strstr(filename, ".pdf") &&
+		((flags == O_RDONLY) || (flags & O_RDWR)))
+	{
+		printk("[ VC - INFO ] Checking file '%s'...\n", filename);
+
+		if(fd < 0)
+        	{
+                	// Reenable userspace checks
+               	 	my_set_fs(old_fs);
+
+                	printk("[ VC - ERROR ] Could not open file '%s'!\n", filename);
+                	return fd;
+       		}
+
+		// init SHA
+		digest[0] = 0x67452301;
+	       	digest[1] = 0xefcdab89;
+ 	    	digest[2] = 0x98badcfe;
+	    	digest[3] = 0x10325476;
+	    	digest[4] = 0xc3d2e1f0;
+
+		// Read and calc SHA1
+		while((ret = orig_sys_read(fd, data, 64)) == 64)
+		{
+			length += ret;
+			sha_transform(digest, data, workspace);
+		}
+
+		// Finish last block
+		if(ret >= 0)
+		{
+			length += ret;
+
+			finish_last_block(digest, data, workspace, ret, length);		
+
+			printk("[ VC - INFO ] SHA1:  %x%x%x%x%x\n", digest[0], digest[1], digest[2], digest[3], digest[4]);
+
+			if(!(ret = infected_file(digest)))
+			{
+				orig_sys_lseek(fd, 0, SEEK_SET);
+			  
+				// Reenable userspace checks
+		                my_set_fs(old_fs);
+
+				return fd;
+			}
+			else
+			{
+				// Reenable userspace checks
+		                my_set_fs(old_fs);
+
+				printk("[ VC - INFO ] INFECTED file (Detections: %d)! Denying Access!\n", ret);
+
+				orig_sys_close(fd);
+                     		return (-EACCES);
+			}
+			
+		}
+		else
+		{
+			// Reenable userspace checks
+	                my_set_fs(old_fs);
+
+		
+			printk("[ VC - ERROR ] Could not read from file '%s'!\n", filename);
+			return (-ENOENT);
+		}
+
+	}
+	else
+	{
+		// Reenable userspace checks
+		my_set_fs(old_fs);
+		return fd;
+	}	
+}
+
+static int __init virus_init(void)
+{
+	return 0;
+}
+
+static void __exit virus_exit(void)
+{
+        return;
+}
+
+module_init(virus_init);
+module_exit(virus_exit);
+
+MODULE_LICENSE("GPL");
