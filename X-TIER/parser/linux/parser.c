@@ -2,7 +2,7 @@
  * main.c
  *
  *  Created on: Mar 28, 2012
- *      Author: vogls
+ *      Author: Sebastian Vogl <vogls@sec.in.tum.de>
  */
 
 #include <stdio.h>
@@ -16,6 +16,7 @@
 #include <gelf.h>
 #include <elf.h>
 #include <stdarg.h>
+#include <getopt.h>
 
 /*
  * TYPEDEFS
@@ -27,8 +28,9 @@ typedef unsigned char u8;
 /*
  * CONFIG
  */
-#define WRAPPER_PATH "./wrapper/linux64/"
-#define WRAPPER_FILE "wrapper.txt"
+char *wrapper_path = "../wrapper/linux64/";
+char *wrapper_file = "wrapper.txt";
+char *extension = ".inject";
 
 /*
  * STRUCTS
@@ -58,6 +60,15 @@ struct wrapper
 {
     u32 size;
     char **wrapper;
+};
+
+static struct option options[] =
+{
+    {"wrapper-file", optional_argument, 0, 'w'},
+    {"wrapper-dir",  optional_argument, 0, 'd'},
+    {"extension",    optional_argument, 0, 'e'},
+    {"init-function",optional_argument, 0, 'i'},
+    {0, 0, 0, 0}
 };
 
 /*
@@ -502,14 +513,17 @@ struct wrapper * getWrapperNames(void)
     u32 i = 0;
     char line[1024];
     char *current_wrapper = NULL;
-    FILE *f = fopen(WRAPPER_FILE, "r");
+    FILE *f = fopen(wrapper_file, "r");
     struct wrapper *w = malloc(sizeof(struct wrapper));
     
     if (!w)
         error("Could not allocate memory for the wrapper structure!\n");
     
     if (!f)
-        error("Could not open wrapper file ('%s')!\n", WRAPPER_FILE);
+    {
+        printf("Could not open wrapper file ('%s')!\n", wrapper_file);
+        error("");
+    }
     
     // Get the number of lines
     w->size = 0;
@@ -614,7 +628,7 @@ void generateShellcode(char *orig_filename, u64 orig_size)
     printf("Generating Injection File...\n");
     
     // Parse wrapper
-    printf("\t -> Parsing wrapper names from '%s'... ", WRAPPER_FILE);
+    printf("\t -> Parsing wrapper names from '%s'... ", wrapper_file);
     w = getWrapperNames();
     printf("Found %lu wrappers!\n", w->size);
 
@@ -661,10 +675,10 @@ void generateShellcode(char *orig_filename, u64 orig_size)
     if(!tmp)
         tmp = orig_filename + strlen(orig_filename);
 
-    out_filename = malloc(sizeof(char) * (tmp - orig_filename + 1 + strlen(".inject") + 1));
+    out_filename = malloc(sizeof(char) * (tmp - orig_filename + 1 + strlen(extension) + 1));
     strncpy(out_filename, orig_filename, tmp - orig_filename);
-    strncpy(out_filename + (tmp - orig_filename), ".inject", strlen(".inject"));
-    out_filename[tmp - orig_filename + 1 + strlen(".inject")] = '\0';
+    strncpy(out_filename + (tmp - orig_filename), extension, strlen(extension));
+    out_filename[tmp - orig_filename + 1 + strlen(extension)] = '\0';
 
     // Temporary outfile for mcount fix
     out_mcount_file = malloc(sizeof(char) * (tmp - orig_filename + 1 + strlen(".inject.mcount") + 1));
@@ -784,11 +798,11 @@ void generateShellcode(char *orig_filename, u64 orig_size)
             printf("\t\t # Trying to find a WRAPPER for '%s'...\n", symbols[i].str);
 
             // Try to find wrapper
-            // Reserve space for name: WRAPPER_PATH/sym_name/sym_name\0
-            wrapper_tmp_name = (char *)malloc(sizeof(char) * (strlen(symbols[i].str) * 2 + strlen(WRAPPER_PATH) + 2));
+            // Reserve space for name: wrapper_path/sym_name/sym_name\0
+            wrapper_tmp_name = (char *)malloc(sizeof(char) * (strlen(symbols[i].str) * 2 + strlen(wrapper_path) + 2));
 
             // Build name
-            strcpy(wrapper_tmp_name, WRAPPER_PATH);
+            strcpy(wrapper_tmp_name, wrapper_path);
             strcat(wrapper_tmp_name, symbols[i].str);
             strcat(wrapper_tmp_name, "/");
             strcat(wrapper_tmp_name, symbols[i].str);
@@ -1088,25 +1102,82 @@ void generateShellcode(char *orig_filename, u64 orig_size)
     fclose(inject_file);
 }
 
+void printUsage(char *argv[])
+{
+        printf("\nUsage: %s [<options>] <kernelmodule>\n", argv[0]);
+        printf("\n\t <kernelmodule>        The complete path to the Linux kernel module (*.ko) that should be parsed.\n\n");
+        printf("\t Options:\n");
+        printf("\t\t -i, --init-function\tThe name of the function that should be executed when the module is loaded.\n"); 
+        printf("\t\t                    \tDEFAULT = 'module_init'\n");
+        printf("\t\t -w, --wrapper-file \tThe path to the text file that contains all functions that are substituted by a wrapper.\n"); 
+        printf("\t\t                    \tDEFAULT = './wrapper.txt'\n");
+        printf("\t\t -w, --wrapper-path \tThe path to the directory that contains the wrapper functions.\n"); 
+        printf("\t\t                    \tDEFAULT = '../wrapper/linux64/#\n");
+        printf("\t\t -e, --extension    \tThe extension of the transformed module. It's name will be equal to the module name.\n"); 
+        printf("\t\t                    \tDEFAULT = '.inject'\n\n");
+        exit(-1);
+}
+
 int main(int argc, char *argv[])
 {
 
     char *file = 0;   // filename
+    char *init_function = 0; // name of the init_function
     struct stat elf_stats;  // fstat struct
     int count = 0;
     int i = 0;
-
-    if (argc < 2 || argc > 3)
+    int option_index = 0;
+    int option = 0;
+    
+    // Parse options
+    while ((option = getopt_long (argc, argv, "hwdei", options, &option_index)) != -1)
     {
-        printf("Usage: %s <kernelmodule> [<init function>]\n", argv[0]);
-        printf("\t <kernelmodule>  = The complete path to the Linux kernel module (*.ko) that should be parsed.\n");
-        printf("\t <init function> = The name of the function that should be executed when the module is loaded.\n"); 
-        printf("\t                   (Default = module_init)\n");
-        return 0;
+        switch (option)
+        {
+            case 'w':
+                wrapper_file = optarg;
+                break;
+            case 'd':
+                wrapper_path = optarg;
+                break;
+            case 'e':
+                extension = optarg;
+                break;
+            case 'i':
+                init_function = optarg;
+                break;
+            case '?':
+                // Never returns
+                printUsage(argv);
+                break;
+            default:
+                // Never returns
+                printUsage(argv);
+                break;
+        }
+    }
+    
+    // Get file name
+    if (argc < 2 || optind >= argc)
+    {
+        // Never returns
+        printUsage(argv);
+    }
+    else
+    {
+        file = argv[optind];
     }
 
-    // File name
-    file = argv[1];
+    // Print settings
+    printf("\n\t X-TIER Linux Kernel Module Parser\n");
+    printf("\t\t |_ Processing File:           '%s'\n", file);
+    
+    if (init_function)
+        printf("\t\t |_ Init Function:             '%s'\n", init_function);
+    printf("\t\t |_ Wrappers are specified in: '%s'\n", wrapper_file);
+    printf("\t\t |_ Wrappers are located at:   '%s'\n", wrapper_path);
+    printf("\t\t |_ Resulting file will be:    '%s%s'\n\n", file, extension);
+    
 
     if((fd = open(file, O_RDONLY)) < 0)
         error("Could not open file\n");
@@ -1216,16 +1287,16 @@ int main(int argc, char *argv[])
     printf("Looking for entry point...\n");
 
     // Find entry point
-    if(argc == 3 && (entry_point = getSymbolOffsetByName(argv[2])) != -1)
+    if(init_function && (entry_point = getSymbolOffsetByName(init_function)) != -1)
     {
         entry_point = entry_point - getSectionAddr(".text") + getSectionOffsetByName(".text");
-        printf("\t -> Found entry function '%s' @ 0x%llx\n", argv[2],  entry_point);
+        printf("\t -> Found entry function '%s' @ 0x%llx\n", init_function,  entry_point);
     }
     else if(argc == 3)
     {
         // Could not find entry function
         printf("\n! WARNING WARNING WARNING WARNING !\n");
-        printf("WARNING could not find entry function '%s' will use init...\n", argv[2]);
+        printf("WARNING could not find entry function '%s' will use init...\n", init_function);
         printf("\n! WARNING WARNING WARNING WARNING !\n");
     }
 

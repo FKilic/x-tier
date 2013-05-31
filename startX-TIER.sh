@@ -24,7 +24,7 @@ DESTINATION_FOLDER="/tmp/"
 
 # Define your VMs here
 LINUX_CMD="-hda /local/vms/ubuntu-11-64-server -k de -monitor telnet:127.0.0.1:3333,server -serial pty -net nic,vlan=0 -net user,vlan=0,hostfwd=tcp::12345-:22 -m 1024 -enable-kvm"
-WINDOWS_CMD="-hda /local/vms/windows-7-32-bit -k de -monitor telnet:127.0.0.1:3333,server -usbdevice tablet -m 1024"
+WINDOWS_CMD="-hda /local/vms/windows-7-32-bit -k de -monitor telnet:127.0.0.1:3333,server -usbdevice tablet -m 1024 -enable-kvm"
 
 #====================================================
 #       Commands

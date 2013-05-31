@@ -84,7 +84,7 @@ then
         finishSubStep true
 
         printSubStep "4" "6" "Copying parser"
-        executeCommand "cp $INJECTION_PATH/parser/linux/X-TIER_linux_parser $DEST/linux/"
+        executeCommand "cp $INJECTION_PATH/parser/linux/X-TIER_linux_parser $DEST/linux/ && cp $INJECTION_PATH/parser/linux/wrapper.txt $DEST/linux/"
         finishSubStep true
         
         printSubStep "5" "6" "Copying wrapper"
