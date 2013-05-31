@@ -1,0 +1,63 @@
+#include <linux/module.h>
+#include <linux/init.h>
+#include <linux/fs.h>
+#include <linux/sched.h>
+
+#include <linux/syscalls.h>
+
+#include <asm/fcntl.h>
+
+/*
+ * struct linux_dirent
+ *      Definition taken from  fs/readdir.c
+ */
+struct linux_dirent {
+   unsigned long   d_ino;
+   unsigned long   d_off;
+   unsigned short  d_reclen;
+   char            d_name[1];
+};
+
+<<<<<<< .mine
+void getdents(char *path)
+=======
+void getdents(int t, char *path)
+>>>>>>> .r194
+{
+    char *test = "/";
+    char buf[512];
+    int read = 0;
+    
+    printk("t is %d and Path is %s\n", t, path);
+    
+    long fd = sys_open(test, O_RDONLY|O_DIRECTORY, 0);
+    
+    printk("Opened fd %lld\n", fd);
+    
+    read = sys_getdents(fd, buf, 512);
+    
+    printk("I read %d bytes\n", read);
+    
+    printk("Reclen: %d\n", ((struct linux_dirent *)buf)->d_reclen);
+    printk("Name: %s\n", ((struct linux_dirent *)buf)->d_name);
+    
+    read = sys_close(fd);
+
+    printk("SYS_CLOSE returned %d\n", read);
+    
+}
+
+static int __init getdents_init(void)
+{
+        return 0;
+}
+
+static void __exit getdents_exit(void)
+{
+        return;
+}
+
+module_init(getdents_init);
+module_exit(getdents_exit);
+
+MODULE_LICENSE("GPL");

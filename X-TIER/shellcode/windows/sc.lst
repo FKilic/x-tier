@@ -1,0 +1,60 @@
+     1                                  ;nasm -f elf64 -l sc.lst sc.asm
+     2                                  BITS 32 
+     3                                          SECTION .text
+     4                                          global main
+     5                                  main:
+     6 00000000 EB2E                            jmp start
+     7                                  
+     8                                  
+     9                                  patcher:
+    10 00000002 8B5508                     mov edx, [ebp+8]      ; counter
+    11 00000005 89EF                       mov edi, ebp
+    12                                  
+    13                                  patchloop:
+    14 00000007 83C710                     add edi, 16
+    15 0000000A 85D2                       test edx, edx          ; if count == 0
+    16 0000000C 740E                       jz endpatcher
+    17 0000000E 4A                         dec edx
+    18                                  
+    19 0000000F 89E8                       mov eax, ebp         ; baseaddr
+    20 00000011 0307                       add eax, [edi]        ; addr where to write
+    21 00000013 89EB                       mov ebx, ebp         ; baseaddr
+    22 00000015 035F08                     add ebx, [edi+8]      ; addr what to write
+    23 00000018 8918                       mov [eax], ebx
+    24 0000001A EBEB                       jmp patchloop
+    25                                  
+    26                                  endpatcher:
+    27 0000001C C3                         ret
+    28                                  
+    29                                  
+    30                                  sc:
+    31 0000001D 5D                         pop ebp           ; our base poiting to our data
+    32 0000001E 8B4D00                     mov ecx, [ebp]     ; entrypoint
+    33 00000021 E8DCFFFFFF                 call patcher
+    34 00000026 89FD                       mov ebp, edi       ; pointing after the patch stack
+    35                                  ;   mov rbx, [rbp]    ; Begin ; End = [rbp+8]
+    36                                  
+    37                                  
+    38                                  exit:
+    39 00000028 90                         nop
+    40 00000029 89C8                       mov eax, ecx       ; entrypointoffset
+    41 0000002B 01E8                       add eax, ebp      ; add base offset
+    42 0000002D FFD0                       call eax
+    43 0000002F F4                         hlt               ; VMI exit
+    44                                  
+    45                                  start:
+    46 00000030 E8E8FFFFFF                      call sc
+    47                                  stack:
+    48 00000035 31C0                            xor eax, eax      ; will be changed to string
+    49                                  
+    50                                  
+    51                                  ; Aufbau:
+    52                                  ; entrypoint
+    53                                  ; patch_count
+    54                                  ; patch_add_off
+    55                                  ; patch_val_off
+    56                                  ; ...
+    57                                  ; kernel module
+    58                                  
+    59                                  
+    60                                  

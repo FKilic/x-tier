@@ -1,0 +1,228 @@
+     1                                  ;nasm -f elf64 -l sc_upgrade.lst sc_upgrade.asm
+     2                                  BITS 64
+     3                                          SECTION .text
+     4                                          global main
+     5                                  main:
+     6 00000000 E962010000                      jmp start
+     7                                  
+     8                                  strcmp:
+     9 00000005 58                         pop rax              ; ret addr
+    10 00000006 59                         pop rcx              ; len(symbolname)
+    11 00000007 5F                         pop rdi              ; *symbolname
+    12 00000008 50                         push rax             ; ret addr
+    13                                  
+    14 00000009 488B7308                   mov rsi, [rbx+0x8]   ;
+    15 0000000D F3A6                       repe cmpsb           ; [rsi],[rdi] 
+    16 0000000F 48B800000000000000-        mov rax, 0
+    17 00000018 00                 
+    18 00000019 7503                       jne strcmpret
+    19 0000001B 488B03                     mov rax, [rbx]
+    20                                  
+    21                                  strcmpret:
+    22 0000001E C3                         ret
+    23                                  
+    24                                  
+    25                                  
+    26                                  patcher:
+    27 0000001F 4C8B4508                   mov r8, [rbp+8]      ; counter
+    28 00000023 4989E9                     mov r9, rbp
+    29                                  
+    30                                  patchloop:
+    31 00000026 4983C110                   add r9, 16
+    32 0000002A 4D85C0                     test r8, r8          ; if count == 0
+    33 0000002D 7415                       jz endpatcher
+    34 0000002F 49FFC8                     dec r8
+    35                                  
+    36 00000032 4889E8                     mov rax, rbp         ; baseaddr
+    37 00000035 490301                     add rax, [r9]        ; addr where to write
+    38 00000038 4889EB                     mov rbx, rbp         ; baseaddr
+    39 0000003B 49035908                   add rbx, [r9+8]      ; addr what to write
+    40 0000003F 488918                     mov [rax], rbx
+    41 00000042 EBE2                       jmp patchloop
+    42                                  
+    43                                  endpatcher:
+    44 00000044 4C89C8                     mov rax, r9          ; return pointer to next data segment
+    45 00000047 C3                         ret
+    46                                  
+    47                                  
+    48                                  esppatcher:
+    49 00000048 58                         pop rax           ; ret addr
+    50 00000049 5A                         pop rdx           ; distance to our data
+    51 0000004A 59                         pop rcx           ; ESP value
+    52 0000004B 50                         push rax          ; ret addr
+    53 0000004C 55                         push rbp          ; saving rbp
+    54 0000004D 4801D5                     add rbp, rdx      ; pointing after the patch stack
+    55                                  
+    56 00000050 4C8B4500                   mov r8, [rbp]      ; counter
+    57 00000054 4989E9                     mov r9, rbp
+    58                                  
+    59                                  esppatchloop:
+    60 00000057 4983C108                   add r9, 8
+    61 0000005B 4D85C0                     test r8, r8          ; if count == 0
+    62 0000005E 7411                       jz espendpatcher
+    63 00000060 49FFC8                     dec r8
+    64                                  
+    65 00000063 4889E8                     mov rax, rbp         ; segmentaddr
+    66 00000066 4829D0                     sub rax, rdx         ; baseaddr = segmentaddr - distance
+    67 00000069 490301                     add rax, [r9]        ; addr where to write
+    68 0000006C 488908                     mov [rax], rcx       ; write ESP
+    69 0000006F EBE6                       jmp esppatchloop
+    70                                  
+    71                                  espendpatcher:
+    72 00000071 4C89C8                     mov rax, r9          ; return pointer to next data segment
+    73 00000074 5D                         pop rbp              ; Restoring rbp
+    74 00000075 C3                         ret
+    75                                  
+    76                                  
+    77                                  
+    78                                  
+    79                                  symbolpatcher:
+    80 00000076 58                         pop rax           ; ret addr
+    81 00000077 5A                         pop rdx           ; distance to our data
+    82 00000078 50                         push rax          ; ret addr
+    83 00000079 55                         push rbp          ; saving rbp
+    84                                  
+    85 0000007A 4801D5                     add rbp, rdx      ; pointing after the patch stack
+    86 0000007D 488B5D00                   mov rbx, [rbp]    ; Begin ; End = [rbp+8]
+    87                                  
+    88                                  suchloop:
+    89 00000081 4C8B4510                   mov r8, [rbp+16]  ; count symbols
+    90 00000085 4C8D7D18                   lea r15, [rbp+24] ; *(len of first symbol)
+    91                                  
+    92                                  vergleichloop:
+    93 00000089 4D85C0                     test r8, r8       ; if countsymbols == 0
+    94 0000008C 7430                       jz endvergleich  
+    95 0000008E 49FFC8                     dec r8
+    96 00000091 4D8B0F                     mov r9, [r15]     ; len of symbol
+    97 00000094 4983C708                   add r15, 8        ; next pointer
+    98 00000098 4D8D17                     lea r10, [r15]    ; addr of symbolname
+    99 0000009B 4D01CF                     add r15, r9       ; *r15 = addr to be patched
+   100 0000009E 4152                       push r10
+   101 000000A0 4151                       push r9
+   102 000000A2 E85EFFFFFF                 call strcmp
+   103 000000A7 4885C0                     test rax, rax
+   104 000000AA 740C                       jz nosymbolfound
+   105 000000AC 4D8B0F                     mov r9, [r15]  ; addr to write
+   106 000000AF 4901E9                     add r9, rbp    ; segmentpointer
+   107 000000B2 4929D1                     sub r9, rdx    ; distance to base
+   108 000000B5 498901                     mov [r9], rax  ; writing addr of symbol to destination
+   109                                  nosymbolfound:
+   110 000000B8 4983C708                   add r15, 0x8
+   111 000000BC EBCB                       jmp vergleichloop  
+   112                                  
+   113                                  endvergleich:
+   114 000000BE 4883C310                   add rbx, 0x10     ; next list_head
+   115 000000C2 483B5D08                   cmp rbx, [rbp+8]  ; if begin == end
+   116 000000C6 7402                       je endsymbolpatcher
+   117 000000C8 EBB7                       jmp suchloop
+   118                                  
+   119                                  
+   120                                  endsymbolpatcher:
+   121 000000CA 5D                      pop rbp
+   122 000000CB C3                      ret
+   123                                  
+   124                                  
+   125                                  saveregisters:
+   126 000000CC 4883C408                   add rsp, 0x8		; retun value
+   127 000000D0 4883C410                   add rsp, 0x10	; 2*8 values auf stack
+   128 000000D4 4883C478                   add rsp, 0x78	; 15*8 register
+   129 000000D8 4150                       push r8
+   130 000000DA 4151                       push r9
+   131 000000DC 4152                       push r10
+   132 000000DE 4153                       push r11
+   133 000000E0 4154                       push r12
+   134 000000E2 4155                       push r13
+   135 000000E4 4156                       push r14
+   136 000000E6 4157                       push r15
+   137 000000E8 55                         push rbp
+   138 000000E9 57                         push rdi
+   139 000000EA 56                         push rsi
+   140 000000EB 52                         push rdx
+   141 000000EC 51                         push rcx
+   142 000000ED 53                         push rbx
+   143 000000EE 50                         push rax
+   144 000000EF 4883EC10                   sub rsp, 0x10	; 2*8 values auf stack
+   145 000000F3 4883EC08                   sub rsp, 0x8		; return valueyy
+   146 000000F7 C3                         ret
+   147                                  
+   148                                  restoreregisters:
+   149 000000F8 4883C408                   add rsp, 0x8		; retun value
+   150 000000FC 4883C408                   add rsp, 0x8		; 1*8 value auf stack
+   151 00000100 58                         pop rax
+   152 00000101 5B                         pop rbx
+   153 00000102 59                         pop rcx
+   154 00000103 5A                         pop rdx
+   155 00000104 5E                         pop rsi
+   156 00000105 5F                         pop rdi
+   157 00000106 5D                         pop rbp
+   158 00000107 415F                       pop r15
+   159 00000109 415E                       pop r14
+   160 0000010B 415D                       pop r13
+   161 0000010D 415C                       pop r12
+   162 0000010F 415B                       pop r11
+   163 00000111 415A                       pop r10
+   164 00000113 4159                       pop r9
+   165 00000115 4158                       pop r8
+   166 00000117 4883EC78                   sub rsp, 0x78	; 15*8 registers
+   167 0000011B 4883EC08                   sub rsp, 0x8		; 1*8 value auf stack
+   168 0000011F 4883EC08                   sub rsp, 0x8		; return valueyy
+   169 00000123 C3                         ret
+   170                                  
+   171                                  sc:
+   172 00000124 E8A3FFFFFF                 call saveregisters ; Alle Register speichern
+   173 00000129 5D                         pop rbp           ; our base poiting to our data
+   174 0000012A 415C                       pop r12           ; original ESP Value which is pushed into the stack by the hypervisor
+   175 0000012C 4C8B5D00                   mov r11, [rbp]    ; entrypoint of module
+   176 00000130 E8EAFEFFFF                 call patcher
+   177 00000135 4889C3                     mov rbx, rax       ; pointer to next symbol data
+   178 00000138 4829EB                     sub rbx, rbp       ; distance to next data
+   179                                  
+   180 0000013B 4154                       push r12          ; original ESP value
+   181 0000013D 53                         push rbx          ; distance to data
+   182 0000013E E805FFFFFF                 call esppatcher
+   183 00000143 4889C3                     mov rbx, rax       ; pointer to next symbol data
+   184 00000146 4829EB                     sub rbx, rbp       ; distance to symbol data
+   185                                  
+   186 00000149 53                         push rbx
+   187 0000014A E827FFFFFF                 call symbolpatcher
+   188                                  
+   189                                  
+   190                                  
+   191                                    
+   192                                  
+   193                                  exit:
+   194 0000014F 90                         nop
+   195 00000150 4C89D8                     mov rax, r11       ; entrypointoffset
+   196 00000153 4801E8                     add rax, rbp      ; add base offset
+   197 00000156 50                         push rax		; addr to call
+   198 00000157 E89CFFFFFF                 call restoreregisters	; Register zuruecksetzen
+   199 0000015C 58                         pop rax		; ein ret wuerde auch machen, aber problem ist der VMI exit
+   200 0000015D 4881C420030000             add rsp, 800	      ; Constant offset to stackEND (=original stack)
+   201 00000164 FFD0                       call rax
+   202 00000166 F4                         hlt               ; VMI exit
+   203                                  
+   204                                  start:
+   205 00000167 E8B8FFFFFF                      call sc
+   206                                  stack:
+   207 0000016C 31C0                            xor eax, eax      ; will be changed to string
+   208                                  
+   209                                  
+   210                                  ; Aufbau:
+   211                                  ; entrypoint
+   212                                  ; patch_count
+   213                                  ; patch_add_off
+   214                                  ; patch_val_off
+   215                                  ; ...
+   216                                  ; esppatch_count
+   217                                  ; esppatch_add_off
+   218                                  ; ...
+   219                                  ; __start___ksymtab
+   220                                  ; __stop___ksymtab
+   221                                  ; count symbols
+   222                                  ; len(printk)
+   223                                  ; printk\0
+   224                                  ; addtowrite printk
+   225                                  ; ...
+   226                                  
+   227                                  
+   228                                  
